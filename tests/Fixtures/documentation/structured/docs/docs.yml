@@ -1,0 +1,10 @@
+version: 1
+title: Curator
+navigation:
+  - index
+  - installation
+  - label: Concepts
+    children:
+      - concepts/media
+redirects:
+  getting-started: install
