@@ -13,6 +13,8 @@
         "php": "^8.4",
         "laravel/framework": "^13.8",
         "laravel/tinker": "^3.0",
+        "saloonphp/laravel-plugin": "^4.0",
+        "saloonphp/saloon": "^4.0",
         "symfony/yaml": "^8.1"
     },
     "require-dev": {
