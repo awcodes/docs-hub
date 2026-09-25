@@ -1,0 +1,7 @@
+A fictional package's docs/ and README.md, written for these tests.
+
+Kept in the repository rather than read from a sibling checkout, so that the
+tests measure the documentation contract rather than whatever is in a
+developer's working tree. It stands in for a real package: grouped
+navigation, front matter, callouts, fenced code in several languages and
+relative links between pages.

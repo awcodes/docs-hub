@@ -32,6 +32,24 @@ return [
 
     'disks' => [
 
+        /*
+         | Synchronized documentation snapshots. Served through the application
+         | rather than directly, so that a request resolves against the
+         | version's published snapshot.
+         |
+         | Reached only through the filesystem abstraction, so that a
+         | multi-node deployment can move it to object storage without the
+         | snapshot model changing.
+         */
+        'documentation' => [
+            'driver' => env('DOCS_DISK_DRIVER', 'local'),
+            'root' => storage_path('app/docs'),
+            'visibility' => 'private',
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+        ],
+
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Documentation\Search\DatabaseDocumentationIndexer;
+use App\Documentation\Search\DocumentationIndexer;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Date;
@@ -16,7 +18,7 @@ class AppServiceProvider extends ServiceProvider
     #[Override]
     public function register(): void
     {
-        //
+        $this->app->bind(DocumentationIndexer::class, DatabaseDocumentationIndexer::class);
     }
 
     public function boot(): void

@@ -1,0 +1,26 @@
+version: 1
+
+title: Example Package
+
+navigation:
+  - index
+  - installation
+  - configuration
+
+  - label: Usage
+    children:
+      - usage/basics
+      - usage/authentication
+      - usage/commands
+
+  - theming
+
+  - label: Architecture
+    children:
+      - architecture/boundaries
+      - architecture/theme-composition
+
+  - label: Contributing
+    children:
+      - contributing/development
+      - contributing/testing

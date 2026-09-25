@@ -5,35 +5,35 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Models\DocumentationPage;
-use App\Models\DocumentationSnapshot;
+use App\Models\ProjectVersion;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<DocumentationPage>
  */
 class DocumentationPageFactory extends Factory
 {
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
+    protected $model = DocumentationPage::class;
+
+    /** @return array<string, mixed> */
     public function definition(): array
     {
-        $routePath = fake()->unique()->slug(2);
+        $title = fake()->unique()->words(3, true);
+        $slug = Str::slug($title);
 
         return [
-            'documentation_snapshot_id' => DocumentationSnapshot::factory(),
-            'source_path' => $routePath.'.md',
-            'slug' => null,
-            'route_path' => $routePath,
-            'title' => fake()->sentence(3),
+            'project_version_id' => ProjectVersion::factory(),
+            'source_path' => $slug.'.md',
+            'slug' => $slug,
+            'title' => Str::headline($title),
             'description' => fake()->sentence(),
-            'headings' => [],
-            'content_hash' => hash('sha256', fake()->text()),
-            'is_listed' => false,
-            'navigation_order' => null,
-            'source_updated_at' => null,
+            'headings' => [
+                ['level' => 2, 'title' => 'Overview', 'anchor' => 'overview'],
+                ['level' => 2, 'title' => 'Usage', 'anchor' => 'usage'],
+            ],
+            'content_hash' => fake()->sha256(),
+            'source_updated_at' => now(),
         ];
     }
 }
