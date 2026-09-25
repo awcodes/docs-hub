@@ -89,6 +89,14 @@ description: How the package's styles are layered.
 Images and other assets live under `docs/assets/` and are served at
 `/assets/{project}/{version}/{path}`.
 
+An image can be limited to one theme with GitHub's fragments, so a light and
+dark pair renders correctly both here and on GitHub:
+
+```markdown
+![The editor](assets/editor-light.png#gh-light-mode-only)
+![The editor](assets/editor-dark.png#gh-dark-mode-only)
+```
+
 A page that exists but is left out of `docs.yml` can still be opened and
 searched, but doesn't appear in the sidebar. That lets half-written pages be
 previewed before they're listed.

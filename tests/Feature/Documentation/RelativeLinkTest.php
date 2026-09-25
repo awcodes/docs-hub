@@ -114,6 +114,11 @@ it('namespaces assets so two versions can ship different screenshots', function 
         ->toContain('src="/assets/example/2.x/panel.png"');
 });
 
+it('keeps a theme fragment on an image so the stylesheet can scope it', function (): void {
+    expect(renderIn('![Editor](assets/editor-dark.png#gh-dark-mode-only)'))
+        ->toContain('src="/assets/example/1.x/editor-dark.png#gh-dark-mode-only"');
+});
+
 it('resolves an asset linked rather than embedded', function (): void {
     expect(renderIn('[The diagram](assets/diagram.svg)'))
         ->toContain('href="/assets/example/1.x/diagram.svg"');
