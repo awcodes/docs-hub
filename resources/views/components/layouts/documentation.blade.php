@@ -58,7 +58,7 @@
                     <x-logo.icon />
                 </div>
 
-                <a href="/" class="text-sm font-semibold">Docs Hub</a>
+                <a href="/" class="font-semibold">Docs Hub</a>
 
                 <div class="ms-auto flex items-center gap-4 text-sm">
                     <livewire:search-dialog />
