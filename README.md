@@ -89,8 +89,9 @@ description: How the package's styles are layered.
 Images and other assets live under `docs/assets/` and are served at
 `/assets/{project}/{version}/{path}`.
 
-An image can be limited to one theme with GitHub's fragments, so a light and
-dark pair renders correctly both here and on GitHub:
+An image can be limited to one theme with the `#gh-light-mode-only` and
+`#gh-dark-mode-only` fragments, a GitHub convention. The hub shows only the image
+matching the reader's theme:
 
 ```markdown
 ![The editor](assets/editor-light.png#gh-light-mode-only)

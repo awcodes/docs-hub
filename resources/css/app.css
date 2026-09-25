@@ -79,9 +79,9 @@
 }
 
 /*
-| Theme-scoped images, using GitHub's convention so a page reads the same in
-| the repository: `![Editor](assets/editor-dark.png#gh-dark-mode-only)` beside
-| its `#gh-light-mode-only` twin. The fragment survives link rewriting, and the
+| Theme-scoped images, using GitHub's fragment convention:
+| `![Editor](assets/editor-dark.png#gh-dark-mode-only)` beside its
+| `#gh-light-mode-only` twin. The fragment survives link rewriting, and the
 | resolved `data-theme` picks which one shows.
 */
 [data-theme='dark'] img[src$='#gh-light-mode-only'],
