@@ -57,7 +57,7 @@ it('names the project and version in the header', function (): void {
     $this->get('/example/1.x')
         ->assertSee($project->name)
         ->assertSee('1.x')
-        ->assertSee(config('app.name'));
+        ->assertSee('Docs Hub');
 });
 
 it('omits the version from the header of a rolling project', function (): void {

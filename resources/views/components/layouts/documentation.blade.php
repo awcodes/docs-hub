@@ -12,7 +12,7 @@
 
     <title>{{ $title ? $title . ' · ' : '' }}{{ $project?->name ?? config('app.name') }}</title>
 
-    <link rel="icon" type="image/svg" href="{{ asset('favicon.svg') }}" />
+    <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}" />
 
     <script>
         (() => {

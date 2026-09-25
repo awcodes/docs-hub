@@ -40,7 +40,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->brandLogo(fn (): View => view('components.logo.horizontal'))
             ->brandLogoHeight(fn (): string => filament()->auth()->user() ? '1.75rem' : '3rem')
-            ->favicon(asset('favicon.svg'))
+            ->favicon(fn (): string => asset('favicon.svg'))
             ->topNavigation()
             ->sidebarWidth('17rem')
             ->sidebarCollapsibleOnDesktop()
