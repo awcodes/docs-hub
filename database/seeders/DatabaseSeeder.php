@@ -17,6 +17,12 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->call(ProjectSeeder::class);
+
+        if (app()->isProduction()) {
+            return;
+        }
+
         User::factory()->create([
             'name' => 'Admin',
             'email' => 'admin@example.com',
