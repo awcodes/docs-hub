@@ -33,6 +33,16 @@ it('lets a signed-in user into the registry', function (): void {
         ->assertSuccessful();
 });
 
+it('lets a signed-in user read the application logs', function (): void {
+    $this->actingAs(User::factory()->create())
+        ->get('/admin/logs')
+        ->assertSuccessful();
+});
+
+it('keeps the application logs from a guest', function (): void {
+    $this->get('/admin/logs')->assertRedirect('/admin/login');
+});
+
 it('gives the panel a link back to the documentation', function (): void {
     $item = collect(Filament::getPanel('admin')->getNavigationItems())
         ->first(fn (NavigationItem $item): bool => $item->getLabel() === 'View Site');
