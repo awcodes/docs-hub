@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Integrations\GitHub;
 
-use App\Http\Integrations\GitHub\Requests\DownloadArchive;
-use App\Http\Integrations\GitHub\Requests\DownloadSignedArchive;
+use App\Http\Integrations\GitHub\Requests\DownloadRawFile;
+use App\Http\Integrations\GitHub\Requests\ReadTree;
 use App\Http\Integrations\GitHub\Requests\ResolveRef;
 use Saloon\Exceptions\Request\RequestException;
 use Throwable;
 
 /**
- * The two things synchronization asks GitHub for, without the HTTP client.
+ * What synchronization asks GitHub for, without the HTTP client.
  *
  * Saloon stops here. `App\Documentation` depends on `DocumentationSource`, the
  * GitHub implementation of it depends on this, and an architecture test holds
@@ -22,7 +22,7 @@ final readonly class GitHubRepositories
 {
     public function __construct(
         private GitHubConnector $api = new GitHubConnector,
-        private ArchiveConnector $archives = new ArchiveConnector,
+        private RawContentConnector $raw = new RawContentConnector,
     ) {}
 
     /**
@@ -44,45 +44,62 @@ final readonly class GitHubRepositories
     }
 
     /**
-     * The repository archive for one commit, as bytes.
+     * Every file path in a commit.
      *
-     * Two hops, and the split is load-bearing. GitHub answers the first with a
-     * 302 to `codeload.github.com`, and an HTTP client that follows a redirect
-     * across hosts drops the `Authorization` header — by design, and correctly.
-     * Against a public repository the redirected request succeeds anyway and
-     * the problem stays invisible; against a private one it returns 404, which
-     * reads like a missing ref rather than a dropped credential.
+     * Blobs only: directories are implied by their contents, a submodule is
+     * another repository's business, and a symlink's blob is its target rather
+     * than a file worth publishing.
      *
-     * So the redirect is read rather than followed, and the signed URL — which
-     * carries its own short-lived authorization — is fetched by a connector
-     * with no credential to send.
+     * GitHub truncates a recursive tree past a size limit and says so rather
+     * than failing. Publishing from a partial listing would drop pages without
+     * a word, so a truncated tree is a failure here.
+     *
+     * @return list<string>
      *
      * @throws GitHubRequestFailed
      */
-    public function downloadArchive(string $repository, string $commit): string
+    public function listFiles(string $repository, string $commit): array
+    {
+        $response = $this->send(fn (): mixed => $this->api->send(new ReadTree($repository, $commit)));
+
+        if (($response['truncated'] ?? false) === true) {
+            throw new GitHubRequestFailed("The tree for `{$repository}` at `{$commit}` is too large to list in one request.");
+        }
+
+        /** @var list<array{path?: mixed, type?: mixed, mode?: mixed}> $entries */
+        $entries = is_array($response['tree'] ?? null) ? $response['tree'] : [];
+
+        $paths = [];
+
+        foreach ($entries as $entry) {
+            if (($entry['type'] ?? null) !== 'blob' || ($entry['mode'] ?? null) === '120000') {
+                continue;
+            }
+
+            if (is_string($entry['path'] ?? null) && $entry['path'] !== '') {
+                $paths[] = $entry['path'];
+            }
+        }
+
+        return $paths;
+    }
+
+    /**
+     * One file's contents at a commit, as bytes.
+     *
+     * @throws GitHubRequestFailed
+     */
+    public function downloadFile(string $repository, string $commit, string $path): string
     {
         try {
-            $response = $this->api->send(new DownloadArchive($repository, $commit));
-
-            if ($response->redirect()) {
-                $location = $response->header('Location');
-
-                if ($location === null || $location === '') {
-                    throw new GitHubRequestFailed(
-                        "`{$repository}` redirected its archive for `{$commit}` to nowhere.",
-                        $response->status(),
-                    );
-                }
-
-                $response = $this->archives->send(new DownloadSignedArchive($location));
-            }
+            $response = $this->raw->send(new DownloadRawFile($repository, $commit, $path));
 
             $response->throw();
 
             return $response->body();
         } catch (RequestException $exception) {
             throw new GitHubRequestFailed(
-                "The archive for `{$repository}` at `{$commit}` could not be downloaded.",
+                "`{$path}` in `{$repository}` at `{$commit}` could not be downloaded.",
                 $exception->getResponse()->status(),
                 $exception,
             );

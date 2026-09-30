@@ -57,20 +57,27 @@ final class DocumentationSourceFailed extends RuntimeException
         );
     }
 
-    public static function archiveUnavailable(
+    public static function treeUnavailable(
         Project $project,
         ProjectVersion $version,
         ?Throwable $previous = null,
     ): self {
         return new self(
-            "The archive for `{$project->repository}` at `{$version->git_ref}` could not be downloaded."
+            "The files of `{$project->repository}` at `{$version->git_ref}` could not be listed."
             .($previous instanceof Throwable ? ' '.$previous->getMessage() : ''),
         );
     }
 
-    public static function archiveUnreadable(string $path): self
-    {
-        return new self("The archive at `{$path}` is not a readable zip.");
+    public static function fileUnavailable(
+        Project $project,
+        ProjectVersion $version,
+        string $path,
+        ?Throwable $previous = null,
+    ): self {
+        return new self(
+            "`{$path}` in `{$project->repository}` at `{$version->git_ref}` could not be downloaded."
+            .($previous instanceof Throwable ? ' '.$previous->getMessage() : ''),
+        );
     }
 
     public static function destinationUnwritable(string $destination): self

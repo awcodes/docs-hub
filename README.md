@@ -18,7 +18,7 @@ round.
 docs.yml + Markdown          in each repository, reviewed in its own pull request
         |
         v
-docs:sync                    resolve ref -> archive -> validate -> snapshot -> index
+docs:sync                    resolve ref -> fetch docs -> validate -> snapshot -> index
         |
         v
 /{project}/{version}/{page}  rendered, searchable, public

@@ -4,24 +4,24 @@ declare(strict_types=1);
 
 use App\Documentation\Exceptions\DocumentationSourceFailed;
 use App\Documentation\Sources\GitHubDocumentationSource;
-use App\Http\Integrations\GitHub\Requests\DownloadArchive;
-use App\Http\Integrations\GitHub\Requests\DownloadSignedArchive;
+use App\Http\Integrations\GitHub\Requests\DownloadRawFile;
+use App\Http\Integrations\GitHub\Requests\ReadTree;
 use App\Http\Integrations\GitHub\Requests\ResolveRef;
 use App\Models\Project;
 use App\Models\ProjectVersion;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\PendingRequest;
 use Saloon\Http\Request;
 use Saloon\Http\Response;
 use Saloon\Laravel\Facades\Saloon;
 
 /*
-| The credential trap is what most of this file is for. GitHub redirects an
-| archive download to `codeload.github.com`, HTTP clients drop `Authorization`
-| across hosts, and against a *public* repository the redirected request
-| succeeds anyway — so the bug is invisible until it is a 404 on a private one
-| that reads like a missing ref.
+| Files come from the tree and raw downloads rather than the zipball, because a
+| zipball honours `export-ignore` and packages mark `/docs` that way. Most of
+| this file is about that, and about keeping the token off a host that does not
+| need it.
 */
 
 const COMMIT = 'f7c193d2a1b4c5d6e7f8091a2b3c4d5e6f708192';
@@ -32,7 +32,6 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     File::deleteDirectory(scratchRoot().'/docs-hub-github');
-    File::deleteDirectory(storage_path('app/docs-archives'));
 });
 
 function githubProject(string $docsPath = 'docs'): Project
@@ -45,27 +44,42 @@ function githubProject(string $docsPath = 'docs'): Project
 }
 
 /**
- * A zipball shaped the way GitHub builds one: everything under a generated
- * top-level directory, and most of it nothing to do with documentation.
+ * Fake a repository at `COMMIT`: its tree, and each file's raw contents.
  *
  * @param  array<string, string>  $files
+ * @param  array<string, mixed>  $tree  Overrides for the tree response.
  */
-function zipball(array $files, string $prefix = 'acme-example-f7c193d'): string
+function fakeRepository(array $files, array $tree = []): void
 {
-    $path = scratchRoot().'/docs-hub-github/'.Str::random(12).'.zip';
+    Saloon::fake([
+        ResolveRef::class => MockResponse::make(['sha' => COMMIT], 200),
+        ReadTree::class => MockResponse::make([
+            'sha' => COMMIT,
+            'tree' => array_map(
+                fn (string $path): array => ['path' => $path, 'mode' => '100644', 'type' => 'blob'],
+                array_keys($files),
+            ),
+            'truncated' => false,
+            ...$tree,
+        ], 200),
+        DownloadRawFile::class => function (PendingRequest $request) use ($files): MockResponse {
+            $path = rawurldecode(Str::after($request->getUrl(), '/acme/example/'.COMMIT.'/'));
 
-    File::ensureDirectoryExists(dirname($path));
+            return array_key_exists($path, $files)
+                ? MockResponse::make($files[$path], 200)
+                : MockResponse::make('404: Not Found', 404);
+        },
+    ]);
+}
 
-    $zip = new ZipArchive;
-    $zip->open($path, ZipArchive::CREATE);
-
-    foreach ($files as $name => $contents) {
-        $zip->addFromString("{$prefix}/{$name}", $contents);
-    }
-
-    $zip->close();
-
-    return (string) file_get_contents($path);
+/** @return list<string> */
+function retrievedFiles(string $destination): array
+{
+    return collect(File::allFiles($destination))
+        ->map(fn ($file): string => str_replace(DIRECTORY_SEPARATOR, '/', $file->getRelativePathname()))
+        ->sort()
+        ->values()
+        ->all();
 }
 
 function destinationDirectory(): string
@@ -120,63 +134,28 @@ it('reads a public repository without a token', function (): void {
         && $response->getPendingRequest()->headers()->get('Authorization') === null);
 });
 
-it('does not send the credential to the signed archive URL', function (): void {
-    Saloon::fake([
-        ResolveRef::class => MockResponse::make(['sha' => COMMIT], 200),
-        DownloadArchive::class => MockResponse::make('', 302, [
-            'Location' => 'https://codeload.github.com/acme/example/legacy.zip/'.COMMIT.'?token=short-lived',
-        ]),
-        DownloadSignedArchive::class => MockResponse::make(zipball([
-            'docs/docs.yml' => "navigation:\n  - index",
-            'docs/index.md' => "# Example\n",
-        ]), 200),
-    ]);
+it('lists the tree of the resolved commit, not the ref', function (): void {
+    fakeRepository(['README.md' => "# Example\n"]);
 
     $project = githubProject();
     $version = ProjectVersion::factory()->for($project)->create(['git_ref' => '1.x']);
 
     (new GitHubDocumentationSource)->retrieve($project, $version, destinationDirectory());
 
-    // The signed URL carries its own short-lived authorization in the query
-    // string. Sending a long-lived token to a host that did not
-    // ask for it would be the opposite of the fix.
-    Saloon::assertSent(fn (Request $request, Response $response): bool => $request instanceof DownloadSignedArchive
-        && $response->getPendingRequest()->headers()->get('Authorization') === null);
+    Saloon::assertSent(fn (Request $request, Response $response): bool => $request instanceof ReadTree
+        && str_contains($response->getPendingRequest()->getUrl(), '/repos/acme/example/git/trees/'.COMMIT)
+        && $response->getPendingRequest()->query()->get('recursive') === '1');
 });
 
-it('reads the redirect rather than following it', function (): void {
-    Saloon::fake([
-        ResolveRef::class => MockResponse::make(['sha' => COMMIT], 200),
-        DownloadArchive::class => MockResponse::make('', 302, [
-            'Location' => 'https://codeload.github.com/acme/example/legacy.zip/'.COMMIT,
-        ]),
-        DownloadSignedArchive::class => MockResponse::make(zipball(['README.md' => "# Example\n"]), 200),
-    ]);
-
-    $project = githubProject();
-    $version = ProjectVersion::factory()->for($project)->create(['git_ref' => '1.x']);
-
-    (new GitHubDocumentationSource)->retrieve($project, $version, destinationDirectory());
-
-    Saloon::assertSent(fn (Request $request, Response $response): bool => $request instanceof DownloadArchive
-        && $response->getPendingRequest()->config()->get('allow_redirects') === false);
-});
-
-it('unpacks the documentation and nothing else', function (): void {
-    Saloon::fake([
-        ResolveRef::class => MockResponse::make(['sha' => COMMIT], 200),
-        DownloadArchive::class => MockResponse::make('', 302, [
-            'Location' => 'https://codeload.github.com/acme/example/legacy.zip/'.COMMIT,
-        ]),
-        DownloadSignedArchive::class => MockResponse::make(zipball([
-            'docs/docs.yml' => "navigation:\n  - index",
-            'docs/index.md' => "# Example\n",
-            'docs/usage/authentication.md' => "# Authentication\n",
-            'README.md' => "# acme/example\n",
-            'src/ExampleServiceProvider.php' => '<?php',
-            'composer.json' => '{}',
-            'vendor/autoload.php' => '<?php',
-        ]), 200),
+it('downloads the documentation and nothing else', function (): void {
+    fakeRepository([
+        'docs/docs.yml' => "navigation:\n  - index",
+        'docs/index.md' => "# Example\n",
+        'docs/usage/authentication.md' => "# Authentication\n",
+        'README.md' => "# acme/example\n",
+        'src/ExampleServiceProvider.php' => '<?php',
+        'composer.json' => '{}',
+        '.gitattributes' => "/docs export-ignore\n",
     ]);
 
     $project = githubProject();
@@ -185,27 +164,55 @@ it('unpacks the documentation and nothing else', function (): void {
 
     (new GitHubDocumentationSource)->retrieve($project, $version, $destination);
 
-    $retrieved = collect(File::allFiles($destination))
-        ->map(fn ($file): string => $file->getRelativePathname())
-        ->sort()
-        ->values()
-        ->all();
-
-    expect($retrieved)->toBe([
+    expect(retrievedFiles($destination))->toBe([
         'README.md',
         'docs/docs.yml',
         'docs/index.md',
         'docs/usage/authentication.md',
+    ])->and(File::get("{$destination}/docs/usage/authentication.md"))->toBe("# Authentication\n");
+
+    Saloon::assertNotSent(fn (Request $request, Response $response): bool => $request instanceof DownloadRawFile
+        && str_contains($response->getPendingRequest()->getUrl(), 'composer.json'));
+});
+
+it('downloads each file at the commit from raw content, without the credential', function (): void {
+    fakeRepository(['docs/index.md' => "# Example\n"]);
+
+    $project = githubProject();
+    $version = ProjectVersion::factory()->for($project)->create(['git_ref' => '1.x']);
+
+    (new GitHubDocumentationSource)->retrieve($project, $version, destinationDirectory());
+
+    // The API token has no business on another host, and raw downloads of a
+    // public repository do not need it.
+    Saloon::assertSent(fn (Request $request, Response $response): bool => $request instanceof DownloadRawFile
+        && $response->getPendingRequest()->getUrl() === 'https://raw.githubusercontent.com/acme/example/'.COMMIT.'/docs/index.md'
+        && $response->getPendingRequest()->headers()->get('Authorization') === null);
+});
+
+it('skips directories, submodules and symlinks in the tree', function (): void {
+    fakeRepository(['docs/index.md' => "# Example\n"], tree: [
+        'tree' => [
+            ['path' => 'docs', 'mode' => '040000', 'type' => 'tree'],
+            ['path' => 'docs/index.md', 'mode' => '100644', 'type' => 'blob'],
+            ['path' => 'docs/vendored', 'mode' => '160000', 'type' => 'commit'],
+            ['path' => 'docs/linked.md', 'mode' => '120000', 'type' => 'blob'],
+        ],
     ]);
+
+    $project = githubProject();
+    $version = ProjectVersion::factory()->for($project)->create(['git_ref' => '1.x']);
+    $destination = destinationDirectory();
+
+    (new GitHubDocumentationSource)->retrieve($project, $version, $destination);
+
+    expect(retrievedFiles($destination))->toBe(['docs/index.md']);
 });
 
 it('honours a project that keeps documentation somewhere else', function (): void {
-    Saloon::fake([
-        ResolveRef::class => MockResponse::make(['sha' => COMMIT], 200),
-        DownloadArchive::class => MockResponse::make(zipball([
-            'documentation/docs.yml' => "navigation:\n  - index",
-            'docs/decoy.md' => '# Not this one',
-        ]), 200),
+    fakeRepository([
+        'documentation/docs.yml' => "navigation:\n  - index",
+        'docs/decoy.md' => '# Not this one',
     ]);
 
     $project = githubProject(docsPath: 'documentation');
@@ -218,13 +225,10 @@ it('honours a project that keeps documentation somewhere else', function (): voi
         ->and("{$destination}/docs")->not->toBeDirectory();
 });
 
-it('refuses an archive entry that would escape the destination', function (): void {
-    Saloon::fake([
-        ResolveRef::class => MockResponse::make(['sha' => COMMIT], 200),
-        DownloadArchive::class => MockResponse::make(zipball([
-            'docs/index.md' => "# Example\n",
-            'docs/../../../escaped.md' => 'nope',
-        ]), 200),
+it('refuses a path that would escape the destination', function (): void {
+    fakeRepository([
+        'docs/index.md' => "# Example\n",
+        'docs/../../../escaped.md' => 'nope',
     ]);
 
     $project = githubProject();
@@ -233,24 +237,10 @@ it('refuses an archive entry that would escape the destination', function (): vo
 
     (new GitHubDocumentationSource)->retrieve($project, $version, $destination);
 
-    // A repository cannot put `..` in a path through git, but an archive is
-    // just bytes and this writes files.
+    // Git will not record `..` as a segment, but this writes files from a
+    // remote answer.
     expect(File::allFiles($destination))->toHaveCount(1)
         ->and(dirname($destination).'/escaped.md')->not->toBeFile();
-});
-
-it('leaves no downloaded archive behind', function (): void {
-    Saloon::fake([
-        ResolveRef::class => MockResponse::make(['sha' => COMMIT], 200),
-        DownloadArchive::class => MockResponse::make(zipball(['README.md' => "# Example\n"]), 200),
-    ]);
-
-    $project = githubProject();
-    $version = ProjectVersion::factory()->for($project)->create(['git_ref' => '1.x']);
-
-    (new GitHubDocumentationSource)->retrieve($project, $version, destinationDirectory());
-
-    expect(File::glob(storage_path('app/docs-archives/*.zip')))->toBeEmpty();
 });
 
 /*
@@ -279,39 +269,42 @@ it('suggests a private or renamed repository when a 404 might be one', function 
         ->toThrow(DocumentationSourceFailed::class, 'private or has been renamed');
 });
 
-it('reports an archive that will not download', function (): void {
+it('refuses a truncated tree rather than publishing part of it', function (): void {
+    fakeRepository(['docs/index.md' => "# Example\n"], tree: ['truncated' => true]);
+
+    $project = githubProject();
+    $version = ProjectVersion::factory()->for($project)->create(['git_ref' => '1.x']);
+
+    (new GitHubDocumentationSource)->retrieve($project, $version, destinationDirectory());
+})->throws(DocumentationSourceFailed::class, 'too large to list');
+
+it('reports a tree that cannot be listed', function (): void {
     Saloon::fake([
         ResolveRef::class => MockResponse::make(['sha' => COMMIT], 200),
-        // What a dropped credential looks like from the outside: not a 401,
-        // just a repository that appears not to exist.
-        DownloadArchive::class => MockResponse::make(['message' => 'Not Found'], 404),
+        ReadTree::class => MockResponse::make(['message' => 'Not Found'], 404),
     ]);
 
     $project = githubProject();
     $version = ProjectVersion::factory()->for($project)->create(['git_ref' => '1.x']);
 
     (new GitHubDocumentationSource)->retrieve($project, $version, destinationDirectory());
-})->throws(DocumentationSourceFailed::class, 'could not be downloaded');
+})->throws(DocumentationSourceFailed::class, 'could not be listed');
 
-it('reports a redirect that points nowhere', function (): void {
-    Saloon::fake([
-        ResolveRef::class => MockResponse::make(['sha' => COMMIT], 200),
-        DownloadArchive::class => MockResponse::make('', 302),
+it('reports a file that will not download', function (): void {
+    fakeRepository(['docs/index.md' => "# Example\n"], tree: [
+        'tree' => [['path' => 'docs/missing.md', 'mode' => '100644', 'type' => 'blob']],
     ]);
 
     $project = githubProject();
     $version = ProjectVersion::factory()->for($project)->create(['git_ref' => '1.x']);
 
     (new GitHubDocumentationSource)->retrieve($project, $version, destinationDirectory());
-})->throws(DocumentationSourceFailed::class, 'could not be downloaded');
+})->throws(DocumentationSourceFailed::class, '`docs/missing.md` in `acme/example` at `1.x` could not be downloaded');
 
-it('costs two requests to synchronize a version', function (): void {
-    Saloon::fake([
-        ResolveRef::class => MockResponse::make(['sha' => COMMIT], 200),
-        DownloadArchive::class => MockResponse::make(zipball([
-            'docs/docs.yml' => "navigation:\n  - index",
-            'docs/index.md' => "# Example\n",
-        ]), 200),
+it('costs two API requests to synchronize a version', function (): void {
+    fakeRepository([
+        'docs/docs.yml' => "navigation:\n  - index",
+        'docs/index.md' => "# Example\n",
     ]);
 
     $project = githubProject();
@@ -319,12 +312,14 @@ it('costs two requests to synchronize a version', function (): void {
 
     $source = new GitHubDocumentationSource;
 
-    // What synchronization does: ask for the commit, then ask for the archive.
-    // One request each is enough, and the interface hands the
-    // second call a ref rather than the commit already resolved — so without
-    // memoization this quietly becomes three.
+    // What synchronization does: ask for the commit, then ask for the files.
+    // The interface hands the second call a ref rather than the commit already
+    // resolved, so without memoization the ref is resolved twice. The raw
+    // downloads are not API requests and do not count against its limit.
     $source->resolveCommit($project, $version);
     $source->retrieve($project, $version, destinationDirectory());
 
-    Saloon::assertSentCount(2);
+    Saloon::mockClient()->assertSentCount(1, ResolveRef::class);
+    Saloon::mockClient()->assertSentCount(1, ReadTree::class);
+    Saloon::mockClient()->assertSentCount(2, DownloadRawFile::class);
 });

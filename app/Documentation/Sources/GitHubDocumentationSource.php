@@ -10,29 +10,29 @@ use App\Http\Integrations\GitHub\GitHubRequestFailed;
 use App\Models\Project;
 use App\Models\ProjectVersion;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
-use ZipArchive;
 
 /**
- * Documentation read from GitHub, one archive at a time.
+ * Documentation read from GitHub, file by file, at one commit.
  *
  * The only thing this does that the local source does not is turn a ref into
- * bytes — everything above it was built and proven against a checkout on disk
- *, which is why this class is small and late rather than large and
- * first.
+ * bytes — everything above it was built and proven against a checkout on disk,
+ * which is why this class is small and late rather than large and first.
  *
- * Two requests per sync: resolve the ref, download the archive for the commit
- * it named. Walking the tree through the Contents API would cost one request
- * per file, which for a modest `docs/` tree is twenty against two.
+ * Not the zipball, though it would be fewer requests. GitHub builds archives
+ * with `git archive`, which drops every `export-ignore` path, and packages mark
+ * `/docs` that way to keep it out of Composer installs — so the archive of a
+ * documented repository is the one place its documentation is missing. Two API
+ * requests (resolve the ref, list the tree) and then one raw download per file,
+ * which does not count against the API rate limit.
  */
 final class GitHubDocumentationSource implements DocumentationSource
 {
     /**
      * Refs already resolved by this instance.
      *
-     * Synchronization asks for the commit and then asks for the archive, and
+     * Synchronization asks for the commit and then asks for the files, and
      * the interface hands the second call a ref rather than a commit — so
-     * without this a sync costs three requests where two will do. Scoped to the instance, which lives for one sync, rather than shared
+     * without this every sync resolves the same ref twice. Scoped to the instance, which lives for one sync, rather than shared
      * where it could go stale in a long-running worker.
      *
      * @var array<string, string>
@@ -79,105 +79,48 @@ final class GitHubDocumentationSource implements DocumentationSource
         $commit = $this->resolveCommit($project, $version);
 
         try {
-            $archive = $this->repositories->downloadArchive($project->repository, $commit);
+            $paths = $this->repositories->listFiles($project->repository, $commit);
         } catch (GitHubRequestFailed $failure) {
-            throw DocumentationSourceFailed::archiveUnavailable($project, $version, $failure);
+            throw DocumentationSourceFailed::treeUnavailable($project, $version, $failure);
         }
 
-        // Written out because `ZipArchive` reads files, not strings. Removed
-        // however this ends: a failed sync should not leave the machine holding
-        // a copy of every repository it could not unpack.
-        $path = storage_path('app/docs-archives/'.Str::random(16).'.zip');
+        $destination = mb_rtrim($destination, '/');
 
-        File::ensureDirectoryExists(dirname($path));
-        File::put($path, $archive);
+        foreach ($this->documentation($project, $paths) as $path) {
+            try {
+                $contents = $this->repositories->downloadFile($project->repository, $commit, $path);
+            } catch (GitHubRequestFailed $failure) {
+                throw DocumentationSourceFailed::fileUnavailable($project, $version, $path, $failure);
+            }
 
-        try {
-            $this->extract($project, $path, $destination);
-        } finally {
-            File::delete($path);
+            File::ensureDirectoryExists(dirname("{$destination}/{$path}"));
+
+            if (File::put("{$destination}/{$path}", $contents) === false) {
+                throw DocumentationSourceFailed::destinationUnwritable($destination);
+            }
         }
     }
 
     /**
-     * Unpack only the documentation, discarding the rest of the repository.
+     * The paths worth downloading: the root README and the `docs_path` tree.
      *
-     * A zipball is the whole repository under one generated top-level directory
-     * — `acme-example-f7c193d/` — so every path is re-rooted before anything
-     * is written. Entries are matched against the two prefixes that matter and
-     * everything else is dropped unread, which is both what the caller needs
-     * and what keeps a `vendor/` out of a snapshot.
+     * Anything that would not stay inside the destination once written is
+     * dropped. Git will not record `..` as a path segment, but this writes
+     * files from a remote answer and should not depend on that.
      *
-     * @throws DocumentationSourceFailed
+     * @param  list<string>  $paths
+     * @return list<string>
      */
-    private function extract(Project $project, string $archive, string $destination): void
+    private function documentation(Project $project, array $paths): array
     {
-        $zip = new ZipArchive;
+        $docsPath = mb_trim($project->docs_path, '/');
 
-        if ($zip->open($archive) !== true) {
-            throw DocumentationSourceFailed::archiveUnreadable($archive);
-        }
-
-        try {
-            $docsPath = mb_trim($project->docs_path, '/');
-            $destination = mb_rtrim($destination, '/');
-
-            for ($index = 0; $index < $zip->numFiles; $index++) {
-                $name = $zip->getNameIndex($index);
-
-                if ($name === false || str_ends_with($name, '/')) {
-                    continue;
-                }
-
-                $relative = $this->reroot($name);
-
-                if ($relative === null) {
-                    continue;
-                }
-
-                if ($relative !== 'README.md' && ! str_starts_with($relative, "{$docsPath}/")) {
-                    continue;
-                }
-
-                $contents = $zip->getFromIndex($index);
-
-                if ($contents === false) {
-                    throw DocumentationSourceFailed::archiveUnreadable($archive);
-                }
-
-                File::ensureDirectoryExists(dirname("{$destination}/{$relative}"));
-                File::put("{$destination}/{$relative}", $contents);
+        return array_values(array_filter($paths, function (string $path) use ($docsPath): bool {
+            if ($path !== 'README.md' && ! str_starts_with($path, "{$docsPath}/")) {
+                return false;
             }
-        } finally {
-            $zip->close();
-        }
-    }
 
-    /**
-     * A zip entry's path with GitHub's generated top-level directory removed.
-     *
-     * Null for anything that would not stay inside the destination once
-     * written. A repository cannot put `..` in a path through git, but an
-     * archive is just bytes and this writes files.
-     */
-    private function reroot(string $name): ?string
-    {
-        $name = str_replace('\\', '/', $name);
-
-        $cut = mb_strpos($name, '/');
-
-        if ($cut === false) {
-            return null;
-        }
-
-        $relative = mb_substr($name, $cut + 1);
-
-        foreach (explode('/', $relative) as $segment) {
-            if (in_array($segment, ['', '.', '..'], true)) {
-                return null;
-            }
-        }
-
-        return $relative;
+            return array_all(explode('/', $path), fn ($segment): bool => ! in_array($segment, ['', '.', '..'], true));
+        }));
     }
 }
