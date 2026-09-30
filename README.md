@@ -7,6 +7,7 @@ keeps in its own repository.
 > Repositories own documentation content. The hub owns distribution and
 > presentation.
 
+[![Tests](https://img.shields.io/github/actions/workflow/status/awcodes/docs-hub/tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/awcodes/docs-hub/actions/workflows/tests.yml)
 [![MIT Licensed](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE.md)
 
 ## How it works
