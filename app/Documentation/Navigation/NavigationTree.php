@@ -69,9 +69,10 @@ final readonly class NavigationTree
                 'type' => 'group',
                 'label' => $entry['label'],
                 'children' => $children,
-                // Groups render open. A reader who cannot see where they are in
-                // the tree has to guess, and a collapsed sidebar on a
-                // documentation set this size hides more than it tidies.
+                // Groups start open and the reader may collapse them. A reader
+                // who cannot see where they are in the tree has to guess, and
+                // a collapsed sidebar on a documentation set this size hides
+                // more than it tidies.
                 'open' => true,
             ];
         }

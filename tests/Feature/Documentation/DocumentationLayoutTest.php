@@ -124,6 +124,33 @@ it('renders the navigation the manifest ordered, not the pages it indexed', func
     $this->get('/example/1.x/unlisted')->assertSuccessful();
 });
 
+it('renders groups as disclosures that start open', function (): void {
+    publishDocumentation(
+        [
+            'index' => "# Example\n",
+            'usage/authentication' => "# Authentication\n",
+            'troubleshooting' => "# Troubleshooting\n",
+        ],
+        navigation: [
+            ['page' => 'index'],
+            ['label' => 'Usage', 'children' => ['usage/authentication']],
+            ['page' => 'troubleshooting'],
+        ],
+    );
+
+    $html = (string) $this->get('/example/1.x')->assertSuccessful()->getContent();
+
+    $group = str($html)->after('group/nav-group')->before('</details>');
+
+    expect((string) $group)->toMatch('/^[^>]*\sopen[\s>][\s\S]*?<summary[^>]*>\s*Usage/');
+
+    // The page after the group sits outside it, not among its children.
+
+    expect((string) $group)
+        ->toContain('/example/1.x/usage/authentication')
+        ->not->toContain('/example/1.x/troubleshooting');
+});
+
 it('names the project and version in the sidebar, where the context lives', function (): void {
     $version = publishDocumentation(['index' => "# Example\n"]);
 

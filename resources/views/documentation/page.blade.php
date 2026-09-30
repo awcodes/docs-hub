@@ -18,25 +18,31 @@
             <p class="text-sm text-gray-600 dark:text-gray-500">This version has no navigation of its own.</p>
         @endif
 
-        <ul class="space-y-2 text-sm">
+        <ul class="space-y-3 text-base lg:space-y-2 lg:text-sm">
             @foreach ($navigation as $entry)
                 @if ($entry['type'] === 'page')
                     <li>
                         <x-documentation.nav-link :item="$entry" />
                     </li>
                 @else
-                    <li class="pt-4 first:pt-0">
-                        <p class="mb-1.5 text-xs font-semibold tracking-wide text-gray-600 uppercase dark:text-gray-500">
-                            {{ $entry['label'] }}
-                        </p>
+                    <li>
+                        <details class="group/nav-group open:pb-3 lg:open:pb-2" @if ($entry['open']) open @endif>
+                            <summary class="flex cursor-pointer list-none items-center justify-between gap-2 font-medium text-gray-900 marker:hidden hover:text-gray-950 dark:text-gray-200 dark:hover:text-white">
+                                {{ $entry['label'] }}
 
-                        <ul class="space-y-1.5 border-s border-gray-300 dark:border-gray-800">
-                            @foreach ($entry['children'] as $child)
-                                <li class="-ms-px border-s border-transparent ps-3 @if ($child['current']) border-primary-600 dark:border-primary-400 @endif">
-                                    <x-documentation.nav-link :item="$child" />
-                                </li>
-                            @endforeach
-                        </ul>
+                                <svg class="h-3.5 w-3.5 shrink-0 text-gray-500 transition-transform group-open/nav-group:rotate-180 dark:text-gray-600" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                                    <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                            </summary>
+
+                            <ul class="ms-1 mt-3 space-y-2.5 border-s border-gray-300 lg:mt-2 lg:space-y-1.5 dark:border-gray-800">
+                                @foreach ($entry['children'] as $child)
+                                    <li class="-ms-px border-s border-transparent ps-3 @if ($child['current']) border-primary-600 dark:border-primary-400 @endif">
+                                        <x-documentation.nav-link :item="$child" />
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </details>
                     </li>
                 @endif
             @endforeach
