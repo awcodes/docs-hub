@@ -35,6 +35,10 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 
     @livewireStyles
+
+    @production
+        <script src="https://cdn.usefathom.com/script.js" data-site="NYJABTUC" defer></script>
+    @endproduction
 </head>
 <body class="h-full bg-white text-gray-800 antialiased dark:bg-gray-950 dark:text-gray-300">
     <div class="flex min-h-full flex-col" x-data="{ drawer: false }" @keydown.escape.window="drawer = false">

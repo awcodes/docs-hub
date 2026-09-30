@@ -105,3 +105,17 @@ it('renders no table of contents column', function (): void {
         ->assertSuccessful()
         ->assertDontSee('Table of contents');
 });
+
+it('loads analytics in production', function (): void {
+    app()->detectEnvironment(fn (): string => 'production');
+
+    $this->get('/')
+        ->assertSuccessful()
+        ->assertSee('cdn.usefathom.com/script.js', escape: false);
+});
+
+it('leaves analytics out outside production', function (): void {
+    $this->get('/')
+        ->assertSuccessful()
+        ->assertDontSee('cdn.usefathom.com', escape: false);
+});
