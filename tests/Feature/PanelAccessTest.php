@@ -35,7 +35,7 @@ it('lets a signed-in user into the registry', function (): void {
 
 it('gives the panel a link back to the documentation', function (): void {
     $item = collect(Filament::getPanel('admin')->getNavigationItems())
-        ->first(fn (NavigationItem $item): bool => $item->getLabel() === 'View Documentation');
+        ->first(fn (NavigationItem $item): bool => $item->getLabel() === 'View Site');
 
     expect($item)->not->toBeNull()
         ->and($item?->getUrl())->toBe(route('documentation.home'));

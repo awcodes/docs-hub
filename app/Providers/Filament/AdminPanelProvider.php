@@ -42,12 +42,10 @@ class AdminPanelProvider extends PanelProvider
             ->brandLogoHeight(fn (): string => filament()->auth()->user() ? '1.75rem' : '3rem')
             ->favicon(fn (): string => asset('favicon.svg'))
             ->topNavigation()
-            ->sidebarWidth('17rem')
-            ->sidebarCollapsibleOnDesktop()
             ->maxContentWidth(Width::Full)
             ->breadcrumbs(false)
             ->navigationItems([
-                NavigationItem::make('View Documentation')
+                NavigationItem::make('View Site')
                     ->icon(Heroicon::OutlinedGlobeAlt)
                     ->sort(-1)
                     ->url(url: fn (): string => route('documentation.home'), shouldOpenInNewTab: true),
