@@ -11,6 +11,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -22,10 +23,13 @@ class ProjectVersionsTable
     {
         return $table
             ->columns([
+                // Every row shares the owner inside a relation manager, so the
+                // project column and filter only say something on the list page.
                 TextColumn::make('project.name')
                     ->label('Project')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->hidden(fn (mixed $livewire): bool => $livewire instanceof RelationManager),
                 TextColumn::make('version')
                     ->searchable()
                     ->sortable()
@@ -66,7 +70,8 @@ class ProjectVersionsTable
                 SelectFilter::make('project')
                     ->relationship('project', 'name')
                     ->searchable()
-                    ->preload(),
+                    ->preload()
+                    ->hidden(fn (mixed $livewire): bool => $livewire instanceof RelationManager),
                 SelectFilter::make('status')
                     ->options(VersionStatus::class),
                 SelectFilter::make('documentation_type')
