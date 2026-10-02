@@ -6,13 +6,17 @@ use App\Enums\ProjectKind;
 use App\Enums\VersioningMode;
 use App\Enums\VersionStatus;
 use App\Filament\Resources\Projects\Pages\CreateProject;
+use App\Filament\Resources\Projects\Pages\EditProject;
 use App\Filament\Resources\Projects\Pages\ListProjects;
+use App\Filament\Resources\Projects\RelationManagers\VersionsRelationManager;
 use App\Filament\Resources\ProjectVersions\Pages\CreateProjectVersion;
 use App\Filament\Resources\ProjectVersions\Pages\EditProjectVersion;
 use App\Filament\Resources\ProjectVersions\Pages\ListProjectVersions;
 use App\Models\Project;
 use App\Models\ProjectVersion;
 use App\Models\User;
+use Filament\Actions\CreateAction;
+use Filament\Actions\EditAction;
 
 use function Pest\Livewire\livewire;
 
@@ -140,4 +144,85 @@ it('does not let the form overwrite what synchronization wrote', function (): vo
         ->status->toBe(VersionStatus::Legacy)
         ->source_commit->toBe('abc123')
         ->active_snapshot->toBe('abc123');
+});
+
+/*
+| The same versions, managed from the project they belong to. The project is
+| the owner record there, so the form never asks for it.
+*/
+
+function versionsOf(Project $project): Livewire\Features\SupportTesting\Testable
+{
+    return livewire(VersionsRelationManager::class, [
+        'ownerRecord' => $project,
+        'pageClass' => EditProject::class,
+    ]);
+}
+
+it('shows only the project\'s own versions on its edit page', function (): void {
+    $project = Project::factory()->create();
+    $mine = ProjectVersion::factory()->for($project)->create(['version' => '1.x']);
+    $theirs = ProjectVersion::factory()->for(Project::factory())->create(['version' => '1.x']);
+
+    versionsOf($project)
+        ->assertSuccessful()
+        ->assertCanSeeTableRecords([$mine])
+        ->assertCanNotSeeTableRecords([$theirs])
+        ->assertTableColumnHidden('project.name');
+});
+
+it('creates a version for the project from its edit page', function (): void {
+    $project = Project::factory()->create();
+    $old = ProjectVersion::factory()->for($project)->default()->create(['version' => '1.x']);
+
+    versionsOf($project)
+        ->callTableAction(CreateAction::class, data: [
+            'version' => '2.x',
+            'git_ref' => '2.x',
+            'status' => VersionStatus::Current->value,
+            'is_default' => true,
+        ])
+        ->assertHasNoTableActionErrors();
+
+    $new = $project->versions()->where('version', '2.x')->sole();
+
+    expect($new->is_default)->toBeTrue()
+        ->and($old->refresh()->is_default)->toBeFalse();
+});
+
+it('refuses a version name the project already has', function (): void {
+    $project = Project::factory()->create();
+    ProjectVersion::factory()->for($project)->create(['version' => '1.x']);
+
+    // Another project's `2.x` must not count against this one.
+    ProjectVersion::factory()->for(Project::factory())->create(['version' => '2.x']);
+
+    versionsOf($project)
+        ->callTableAction(CreateAction::class, data: [
+            'version' => '1.x',
+            'git_ref' => '1.x',
+            'status' => VersionStatus::Current->value,
+        ])
+        ->assertHasTableActionErrors(['version' => 'unique']);
+
+    versionsOf($project)
+        ->callTableAction(CreateAction::class, data: [
+            'version' => '2.x',
+            'git_ref' => '2.x',
+            'status' => VersionStatus::Current->value,
+        ])
+        ->assertHasNoTableActionErrors();
+});
+
+it('leaves one default version when one is made default from the project', function (): void {
+    $project = Project::factory()->create();
+    $first = ProjectVersion::factory()->for($project)->default()->create(['version' => '1.x']);
+    $second = ProjectVersion::factory()->for($project)->create(['version' => '2.x']);
+
+    versionsOf($project)
+        ->callTableAction(EditAction::class, $second, data: ['is_default' => true])
+        ->assertHasNoTableActionErrors();
+
+    expect($second->refresh()->is_default)->toBeTrue()
+        ->and($first->refresh()->is_default)->toBeFalse();
 });

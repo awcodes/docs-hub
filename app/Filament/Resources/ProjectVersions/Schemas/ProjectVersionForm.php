@@ -9,6 +9,7 @@ use App\Enums\VersionStatus;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -31,7 +32,10 @@ class ProjectVersionForm
                             ->required()
                             ->searchable()
                             ->preload()
-                            ->live(),
+                            ->live()
+                            // Inside a project's relation manager the project
+                            // is the owner record, and the relationship sets it.
+                            ->hidden(fn (mixed $livewire): bool => $livewire instanceof RelationManager),
                         TextInput::make('version')
                             ->required()
                             ->live(onBlur: true)
@@ -45,7 +49,12 @@ class ProjectVersionForm
                             })
                             ->unique(
                                 ignoreRecord: true,
-                                modifyRuleUsing: fn ($rule, Get $get) => $rule->where('project_id', $get('project_id')),
+                                modifyRuleUsing: fn ($rule, Get $get, mixed $livewire) => $rule->where(
+                                    'project_id',
+                                    $livewire instanceof RelationManager
+                                        ? $livewire->getOwnerRecord()->getKey()
+                                        : $get('project_id'),
+                                ),
                             )
                             ->helperText('What the reader sees in the URL — 1.x.'),
                         TextInput::make('git_ref')
