@@ -166,6 +166,41 @@ it('does nothing when the commit has not moved', function (): void {
         ->and($second->commit)->toBe($first->commit);
 });
 
+it('republishes an unchanged commit after the version is renamed', function (): void {
+    $version = mounted([
+        'docs/docs.yml' => "navigation:\n  - index",
+        'docs/index.md' => "# Example\n",
+    ]);
+
+    sync($version);
+
+    $version->refresh()->update(['version' => '0.x']);
+
+    $result = sync($version->refresh());
+
+    expect($result->outcome)->toBe(SyncOutcome::Published)
+        ->and((new SnapshotStore)->readPublished($version->refresh(), 'docs/index.md'))->toBe("# Example\n");
+});
+
+it('republishes an unchanged commit after the project slug changes', function (): void {
+    $version = mounted([
+        'docs/docs.yml' => "navigation:\n  - index",
+        'docs/index.md' => "# Example\n",
+    ]);
+
+    sync($version);
+
+    $version->project->update(['slug' => 'renamed']);
+    config()->set('documentation.local_sources', [
+        'renamed' => config('documentation.local_sources.example'),
+    ]);
+
+    $result = sync($version->refresh());
+
+    expect($result->outcome)->toBe(SyncOutcome::Published)
+        ->and((new SnapshotStore)->readPublished($version->refresh(), 'docs/index.md'))->toBe("# Example\n");
+});
+
 it('republishes an unchanged commit when forced', function (): void {
     $version = mounted([
         'docs/docs.yml' => "navigation:\n  - index",
