@@ -56,7 +56,12 @@ final readonly class SyncProjectVersion
 
         // Nothing has moved. Re-publishing identical bytes would churn the
         // snapshot directory and the page index for no reader's benefit.
-        if ($commit === $version->source_commit && ! $force && $version->isPublished()) {
+        // The snapshot has to be where the registry now addresses it, though:
+        // its path is built from the project slug and version name, so
+        // renaming either leaves the published commit stranded under the old
+        // path and only a republish puts it back where readers look.
+        if ($commit === $version->source_commit && ! $force && $version->isPublished()
+            && $this->snapshots->exists($version, $commit)) {
             return SyncResult::unchanged($commit, $version->documentation_type);
         }
 
