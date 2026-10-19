@@ -70,6 +70,7 @@ return [
 
     'reserved_paths' => [
         'admin',
+        'api',
         'assets',
         'livewire',
         'storage',
