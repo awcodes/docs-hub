@@ -16,6 +16,7 @@
         "laravel/framework": "^13.8",
         "laravel/tinker": "^3.0",
         "league/commonmark": "^2.10",
+        "league/flysystem-aws-s3-v3": "^3.0",
         "phiki/phiki": "^2.0",
         "saloonphp/laravel-plugin": "^4.0",
         "saloonphp/saloon": "^4.0",

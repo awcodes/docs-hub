@@ -220,20 +220,18 @@ final readonly class SnapshotStore
     public function prune(ProjectVersion $version, string $keep, int $retain): array
     {
         $retain = max(1, $retain);
-        $disk = $this->disk();
 
-        $superseded = array_values(array_filter(
-            $this->snapshots($version),
-            static fn (string $commit): bool => $commit !== $keep,
-        ));
+        $ages = [];
 
-        usort(
-            $superseded,
-            fn (string $a, string $b): int => $disk->lastModified($this->path($version, $b).'/')
-                <=> $disk->lastModified($this->path($version, $a).'/'),
-        );
+        foreach ($this->snapshots($version) as $commit) {
+            if ($commit !== $keep) {
+                $ages[$commit] = $this->writtenAt($version, $commit);
+            }
+        }
 
-        $removed = array_slice($superseded, $retain - 1);
+        arsort($ages);
+
+        $removed = array_slice(array_map(strval(...), array_keys($ages)), $retain - 1);
 
         foreach ($removed as $commit) {
             $this->delete($version, $commit);
@@ -252,6 +250,21 @@ final readonly class SnapshotStore
     public function path(ProjectVersion $version, string $commit): string
     {
         return $this->versionPath($version).'/'.$this->segment($commit);
+    }
+
+    /**
+     * When a snapshot was written, as a Unix timestamp.
+     *
+     * Read from a file inside it because object storage has no directory to
+     * carry a timestamp: a prefix is only a naming convention. Any file will
+     * do, since a snapshot is written whole and never touched again.
+     */
+    private function writtenAt(ProjectVersion $version, string $commit): int
+    {
+        $disk = $this->disk();
+        $files = $disk->files($this->path($version, $commit), true);
+
+        return $files === [] ? 0 : $disk->lastModified($files[0]);
     }
 
     /**
