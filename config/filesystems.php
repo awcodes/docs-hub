@@ -38,11 +38,12 @@ return [
          | version's published snapshot.
          |
          | Reached only through the filesystem abstraction, so that a
-         | multi-node deployment can move it to object storage without the
-         | snapshot model changing.
+         | deployment can move it to object storage without the snapshot model
+         | changing: point `DOCS_DISK` at an S3 disk instead (`s3` locally
+         | against MinIO, or the bucket's disk on Laravel Cloud).
          */
         'documentation' => [
-            'driver' => env('DOCS_DISK_DRIVER', 'local'),
+            'driver' => 'local',
             'root' => storage_path('app/docs'),
             'visibility' => 'private',
             'serve' => false,

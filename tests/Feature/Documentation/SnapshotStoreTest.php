@@ -194,10 +194,9 @@ it('prunes the oldest superseded snapshots, not the alphabetically last', functi
             'docs/index.md' => "# {$commit}\n",
         ]));
 
-        touch(
-            Storage::disk('documentation')->path("example/1.x/{$commit}"),
-            now()->subSeconds($secondsAgo)->getTimestamp(),
-        );
+        foreach (File::allFiles(Storage::disk('documentation')->path("example/1.x/{$commit}")) as $file) {
+            touch($file->getPathname(), now()->subSeconds($secondsAgo)->getTimestamp());
+        }
     }
 
     $removed = $this->store->prune($this->version, 'mmmmmmm', 2);
